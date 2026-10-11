@@ -1,0 +1,21 @@
+# console client settings (key = value; '#' or ';' starts a comment)
+# Credentials are NOT stored here - they come from a separate credentials file.
+
+# Folder whose currentserver.ini holds the server address
+userdata_folder=D:\CyberPW Gameplay\element\userdata
+
+# Optional source checkout used to resolve protocol and game-command names.
+client_source_root=B:\Git\PW_ClientSource\client
+elements_root=B:\Git\Element.Data pasrsed\element parser\elements
+tasks_root=B:\Git\Cyber Tasks Data Parsed
+
+# Character to enter automatically (omitted -> first character in the list).
+
+# NPC quest auto-cycle: return the quest, then accept it again.
+quest_return_id=17384
+quest_accept_id=15870
+quest_pending_id=17064
+npc_template_id=22485
+quest_cycles=1
+quest_retry_minutes=5
+quest_command_delay=3
