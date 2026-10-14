@@ -21,11 +21,11 @@ ROOT = HERE
 DEFAULT_CONFIG = os.path.join(ROOT, "console_client_config.txt")
 WORKER = os.path.join(HERE, "worker_entry.py")
 ACCOUNTS_DIR = os.path.join(ROOT, "accounts")
-AUTO_START_INTERVAL = 3.0
 AUTO_CLOSE_DELAY = 180.0
 AUTO_CLOSE_WARNING = 60.0
+WORKER_RUN_SECONDS = 30.0
 MIN_COOLDOWN = 0.1
-DEFAULT_COOLDOWN = 1.0
+DEFAULT_COOLDOWN = 5.0
 MAX_LOG_LINES = 800
 COPY_LOG_LINES = 100
 COPY_LOG_HISTORY = 300
@@ -49,6 +49,8 @@ class AccountTab:
         self.mode = mode
         self.manual_stop = False
         self.finished = False
+        self.expired = False
+        self.deadline: float | None = None
         self.cooldown = DEFAULT_COOLDOWN
         self.history: list[str] = []
         self.quest_items: list[int | str] = []
@@ -89,7 +91,13 @@ class AccountTab:
         self.start()
 
     def start(self) -> None:
+        active = self.app.active_tab
+        if active is not None and active is not self and not active.expired:
+            self.app.status_text("Зараз працює інша вкладка.", True)
+            return
         self.finished = False
+        if self.deadline is None:
+            self.deadline = time.monotonic() + WORKER_RUN_SECONDS
         self.process.start(SessionSettings(DEFAULT_CONFIG, self.path, self.mode))
         self.process.send_control(f"COOLDOWN {self.cooldown:g}")
 
@@ -140,7 +148,10 @@ class AccountTab:
         self.manual_stop = True
         self.process.stop()
 
-    def reconnect(self) -> None:
+    def reconnect(self, sender=None, app_data=None, user_data=None) -> None:
+        self._reconnect(True)
+
+    def _reconnect(self, fresh: bool) -> None:
         self.manual_stop = False
         self.process.stop()
         self.process.clear_events()
@@ -151,14 +162,17 @@ class AccountTab:
         dpg.configure_item(self.pending,
                            default_value="Очікування: перевірка квесту 17064...",
                            color=COLORS["muted"])
+        if fresh:
+            self.deadline = None
+            self.expired = False
         self.start()
 
     def finish(self) -> None:
         if self.finished:
             return
         self.finished = True
-        if not self.manual_stop and dpg.get_value(self.auto_reconnect):
-            self.reconnect()
+        if not self.manual_stop and not self.expired and dpg.get_value(self.auto_reconnect):
+            self._reconnect(False)
 
     def copy_log(self) -> None:
         dpg.set_clipboard_text("\n".join(self.history[-COPY_LOG_LINES:]))
@@ -174,8 +188,8 @@ class GuiApp:
     def __init__(self):
         self.tabs: dict[int | str, AccountTab] = {}
         self.running = True
-        self.auto_queue: list[str] = []
-        self.next_auto_at = 0.0
+        self.auto_queue: list[tuple[str, SessionMode]] = []
+        self.active_tab: AccountTab | None = None
         self.close_at = time.monotonic() + AUTO_CLOSE_DELAY
         self.close_warned = False
         dpg.create_context()
@@ -307,20 +321,25 @@ class GuiApp:
                 return False
         tab = AccountTab(self, path, login, mode)
         self.tabs[tab.tag] = tab
+        self.active_tab = tab
         return True
 
     def open_selected(self) -> None:
-        opened = 0
+        queued = 0
         for path, selected in zip(self.paths, self.selected):
             if not selected:
                 continue
-            if self.open_account_tab(path, self.picker_mode):
-                opened += 1
-        if opened == 0:
+            if any(tab.path == path for tab in self.tabs.values()):
+                continue
+            if any(queued_path == path for queued_path, _mode in self.auto_queue):
+                continue
+            self.auto_queue.append((path, self.picker_mode))
+            queued += 1
+        if queued == 0:
             self.status_text("Оберіть хоча б один файл.", True)
             return
         dpg.hide_item("picker")
-        self.status_text(f"Запущено вкладок: {opened}")
+        self.status_text(f"У черзі: {queued}. Працює одна вкладка за раз, {WORKER_RUN_SECONDS:g} с.")
 
     def queue_auto_start(self) -> None:
         try:
@@ -329,22 +348,35 @@ class GuiApp:
                            key=str.lower)
         except OSError:
             return
-        self.auto_queue = [os.path.join(ACCOUNTS_DIR, name) for name in names]
+        self.auto_queue = [(os.path.join(ACCOUNTS_DIR, name), SessionMode.WORLD)
+                           for name in names]
         if self.auto_queue:
-            self.next_auto_at = time.monotonic()
             self.status_text(f"Автозапуск: знайдено файлів: {len(self.auto_queue)}")
 
+    def _tab_running(self, tab: AccountTab) -> bool:
+        process = tab.process.process
+        return process is not None and process.poll() is None
+
     def pump_auto_start(self) -> None:
-        if not self.auto_queue:
-            return
-        if time.monotonic() < self.next_auto_at:
-            return
-        path = self.auto_queue.pop(0)
-        if self.open_account_tab(path, SessionMode.WORLD):
-            self.status_text(f"Автозапуск: {os.path.basename(path)} "
-                             f"(залишилось: {len(self.auto_queue)})")
-        if self.auto_queue:
-            self.next_auto_at = time.monotonic() + AUTO_START_INTERVAL
+        now = time.monotonic()
+        active = self.active_tab
+        if active is not None:
+            if active.deadline is not None and now >= active.deadline:
+                if not active.expired:
+                    active.expired = True
+                    active.manual_stop = True
+                    active.process.stop()
+                self.active_tab = None
+            elif not self._tab_running(active) and (active.manual_stop or active.finished or active.expired):
+                self.active_tab = None
+            else:
+                return
+        while self.auto_queue:
+            path, mode = self.auto_queue.pop(0)
+            if self.open_account_tab(path, mode):
+                self.status_text(f"Запущено: {os.path.basename(path)} "
+                                 f"(30 с, у черзі: {len(self.auto_queue)})")
+                return
 
     def status_text(self, text: str, bad: bool = False) -> None:
         dpg.configure_item(self.status, default_value=text,
@@ -353,6 +385,8 @@ class GuiApp:
     def close_tab(self, sender, app_data, user_data) -> None:
         tab = self.tabs.pop(user_data, None)
         if tab:
+            if self.active_tab is tab:
+                self.active_tab = None
             tab.close()
 
     def delay_shutdown(self) -> None:

@@ -38,13 +38,13 @@ class QuestController:
 
     def _wait_task(self) -> bool:
         self.client.log(f"Waiting task {self.pending_id} active; AFK mode "
-                         "(CHECK_FINISH every 3s)")
+                         "(CHECK_FINISH every 5s)")
         while not self.client.stop_event.is_set():
             reply = self.client.task_check_finish(self.pending_id)
             if self.client.reply_confirms_task(reply, self.pending_id, 2):
                 self.client.log(f"Waiting task {self.pending_id} completed by server")
                 return True
-            if self.client.stop_event.wait(3):
+            if self.client.stop_event.wait(5):
                 return False
         return False
 
@@ -80,4 +80,4 @@ class QuestController:
             while time.monotonic() < deadline and not self.client.stop_event.is_set():
                 if self.client.task_check_finish(self.pending_id):
                     break
-                if self.client.stop_event.wait(3): return
+                if self.client.stop_event.wait(5): return

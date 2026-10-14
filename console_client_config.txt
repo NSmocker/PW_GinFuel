@@ -18,4 +18,4 @@ quest_pending_id=17064
 npc_template_id=22485
 quest_cycles=1
 quest_retry_minutes=5
-quest_command_delay=3
+quest_command_delay=5
