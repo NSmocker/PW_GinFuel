@@ -21,11 +21,11 @@ ROOT = HERE
 DEFAULT_CONFIG = os.path.join(ROOT, "console_client_config.txt")
 WORKER = os.path.join(HERE, "worker_entry.py")
 ACCOUNTS_DIR = os.path.join(ROOT, "accounts")
-AUTO_CLOSE_DELAY = 180.0
+AUTO_CLOSE_DELAY = 3 * 60 * 60
 AUTO_CLOSE_WARNING = 60.0
-WORKER_RUN_SECONDS = 30.0
+WORKER_RUN_SECONDS = 50.0
 MIN_COOLDOWN = 0.1
-DEFAULT_COOLDOWN = 5.0
+DEFAULT_COOLDOWN = 4.0
 MAX_LOG_LINES = 800
 COPY_LOG_LINES = 100
 COPY_LOG_HISTORY = 300
@@ -257,7 +257,7 @@ class GuiApp:
                         width=470, no_close=True):
             dpg.add_text(
                 "Програма закриється через 1 хвилину. "
-                "Для того щоб відстрочити закриття на 3 хвилини, "
+                "Для того щоб відстрочити закриття на 3 години, "
                 "натисніть Окей", wrap=450)
             with dpg.group(horizontal=True):
                 dpg.add_spacer(width=350)
@@ -375,7 +375,7 @@ class GuiApp:
             path, mode = self.auto_queue.pop(0)
             if self.open_account_tab(path, mode):
                 self.status_text(f"Запущено: {os.path.basename(path)} "
-                                 f"(30 с, у черзі: {len(self.auto_queue)})")
+                                 f"({WORKER_RUN_SECONDS:g} с, у черзі: {len(self.auto_queue)})")
                 return
 
     def status_text(self, text: str, bad: bool = False) -> None:

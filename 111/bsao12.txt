@@ -1,2 +1,0 @@
-login:nirka
-password:11qq11QQ

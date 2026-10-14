@@ -68,7 +68,7 @@ class SessionClient:
         self.game_request_lock = threading.Lock()
         self.game_replies: queue.Queue = queue.Queue()
         self.game_reply_timeout = 10.0
-        self.package_send_cooldown = 5.0
+        self.package_send_cooldown = 4.0
         self._cooldown_lock = threading.Lock()
         self._cooldown_changed = threading.Event()
         self._last_game_send = 0.0
